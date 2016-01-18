@@ -3,7 +3,7 @@
 // @namespace      http://www.shrmn.com/
 // @description    Automatically plays LevynLight turn, shows time to next turn in title bar and sub-menu bar.
 // @copyright      2010, Shrmn K (http://www.shrmn.com/)
-// @version        0.1.0
+// @version        0.1.1
 // @include        http://apps.facebook.com/levynlight/*
 // @include        http://apps.new.facebook.com/levynlight/*
 // @require        http://getelementsbyclassname.googlecode.com/files/getElementsByClassName-1.0.1.js
@@ -65,6 +65,13 @@ function superBattleLoop() {
 	var winnerDiv = getElementsByClassName("winner player", "div", document.getElementById('app377144924760_turnSummary'));
 	var roundOver = getElementsByClassName("hidden player", "div", document.getElementById('app377144924760_turnStack'));
 	
+	var won = "Victory!";
+	if(winnerDiv.length == 0) {
+		won = "Defeat!";
+		// The class changes from "player" to "game" when the AI wins
+		roundOver = getElementsByClassName("hidden game", "div", document.getElementById('app377144924760_turnStack'));
+	}
+	
 	if(roundOver.length == 1 && roundOver[0].getAttribute("id") == "app377144924760_turnSummary") {
 		// Run this every second until the battle is over.
 		setTimeout(superBattleLoop, 1000);
@@ -72,9 +79,9 @@ function superBattleLoop() {
 		battleInProgress = false;
 		var loot = getElementsByClassName("lootContent clear-block", "div", document.getElementById('app377144924760_turnSummary'));
 		if(loot.length == 0)
-			document.title = winnerDiv[0].innerHTML + " | Round ended | " + pageTitle;
+			document.title = won + " | Round ended | " + pageTitle;
 		else
-			document.title = winnerDiv[0].innerHTML + " (Loot Present) | Round ended | " + pageTitle;
+			document.title = won + " (Loot Present) | Round ended | " + pageTitle;
 		// Refresh page
 		window.location = "http://apps.facebook.com/levynlight/";
 	}
