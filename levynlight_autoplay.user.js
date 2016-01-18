@@ -3,11 +3,13 @@
 // @namespace      http://www.shrmn.com/
 // @description    Automatically plays LevynLight turn, shows time to next turn in title bar and sub-menu bar.
 // @copyright      2010, Shrmn K (http://www.shrmn.com/)
-// @version        0.1.7
+// @version        0.1.8
 // @include        http://apps.facebook.com/levynlight/*
 // @include        http://apps.new.facebook.com/levynlight/*
 // @require        http://userscripts.org/scripts/source/74144.user.js
 //
+// @history 0.1.8 Fixed some ugh careless bugs in 0.1.7
+// @history 0.1.8 Commented out untested features
 // @history 0.1.7 Removed loot code as it was a scam (Thanks TheDr)
 // @history 0.1.7 Added check for goblin/empty page - will refresh page after 5 minutes if the script cannot detect the timer
 // @history 0.1.6 Fixed some compatibility issues with Loot in Maintenance update v2.0.15 (thanks d3stiny)
@@ -59,11 +61,11 @@ var stagnantThreshold = 10;      // Waits this number of seconds for page to loa
 
 var pageTitle = document.title;
 var header = false;
-var headerHTML = header.innerHTML;
+var headerHTML = false;
 var battleInProgress = 0;
 var scriptStarted = false;
 var i = 0;
-var _LLAPversion = '0.1.6';
+var _LLAPversion = '0.1.8';
 var stagnantTime = 0;
 
 ////////////////////////////
@@ -185,6 +187,7 @@ function checkPage() {
 		}
 	} else {
 		header = document.getElementById("app377144924760_header");
+		headerHTML = header.innerHTML;
 		checkActions();
 	}
 }
@@ -237,10 +240,10 @@ function loopWhileBattle() {
 		// Run this every second until the battle is over.
 		setTimeout(loopWhileBattle, 1000);
 		if(battleInProgress == 1) {
-			var enemy = getElementsByClassName("encounterText", "div");
-			if(enemy.length == 1) {
-				updateStatus("VS: <enemy name>");
-			}
+			//var enemy = getElementsByClassName("encounterText", "div");
+			//if(enemy.length == 1) {
+				updateStatus("Battle ongoing...");
+			//}
 			battleInProgress = 2;
 		}
 	} else {
