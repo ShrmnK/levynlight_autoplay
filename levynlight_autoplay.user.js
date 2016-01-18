@@ -3,11 +3,13 @@
 // @namespace      http://www.shrmn.com/
 // @description    Automatically plays LevynLight turn, shows time to next turn in title bar and sub-menu bar.
 // @copyright      2010, Shrmn K (http://www.shrmn.com/)
-// @version        0.1.6
+// @version        0.1.7
 // @include        http://apps.facebook.com/levynlight/*
 // @include        http://apps.new.facebook.com/levynlight/*
 // @require        http://userscripts.org/scripts/source/74144.user.js
 //
+// @history 0.1.7 Removed loot code as it was a scam (Thanks TheDr)
+// @history 0.1.7 Added check for goblin/empty page - will refresh page after 5 minutes if the script cannot detect the timer
 // @history 0.1.6 Fixed some compatibility issues with Loot in Maintenance update v2.0.15 (thanks d3stiny)
 // @history 0.1.6 Added menu commands (uses Greasemonkey's memory system. Breaks support for Chrome)
 // @history 0.1.6 Added ability to force update check
@@ -49,18 +51,20 @@
 var updateFrequency = 1;         // Frequency timer updates (in seconds)
 var showSeconds = true;          // Timer shows in seconds instead of minutes:seconds
 var alertOnEnergyZero = true;    // Fires a javascript alert box to inform user that he has no more energy
+var stagnantThreshold = 10;      // Waits this number of seconds for page to load
 
 ///////////////////////////////////////////////////////////////////////////////////////
 // *** DO NOT TOUCH ANYTHING BELOW HERE IF YOU DO NOT KNOW WHAT YOU ARE DOING!!! *** //
 ///////////////////////////////////////////////////////////////////////////////////////
 
 var pageTitle = document.title;
-var header = document.getElementById("app377144924760_header");
+var header = false;
 var headerHTML = header.innerHTML;
-var battleInProgress = false;
+var battleInProgress = 0;
 var scriptStarted = false;
 var i = 0;
 var _LLAPversion = '0.1.6';
+var stagnantTime = 0;
 
 ////////////////////////////
 ////// CORE FUNCTIONS //////
@@ -133,21 +137,17 @@ function initialize() {
 	});
 	
 	scriptStarted = true;
-	if(document.getElementById('app377144924760_playCounter').innerHTML == '') {
-		// Delay 1 second before running checkActions to eliminate NaN problem
-		setTimeout(checkActions, 1000);
-	} else {
-		checkActions();
-	}
+	// Start function to check if the page is loaded
+	checkPage();
 }
 
 // Starts playing turn
 // Launches click event and starts battle loop after 3 seconds
 function playTurn() {
-	if(!battleInProgress) {
+	if(battleInProgress == 0) {
 		var playbutton = document.getElementById('app377144924760_playbutton');	
 		clickElement(playbutton);
-		battleInProgress = true;
+		battleInProgress = 1;
 		// Run loop to check for battle status after 3 seconds (enough for AJAX to initiate)
 		setTimeout(loopWhileBattle, 3000);
 	}
@@ -157,10 +157,42 @@ function playTurn() {
 ////// TIMER FUNCTIONS //////
 /////////////////////////////
 
+// Loops to check if the page is loaded
+function checkPage() {
+	if(document.getElementById('app377144924760_playCounter').innerHTML == '') {
+		if(stagnantTime < stagnantThreshold) {
+			setTimeout(checkPage, 1000);
+			stagnantTime++;
+			updateStatus('Loading... (' + (stagnantThreshold-stagnantTime+1) + 's before stagnant wait)');
+		} else {
+			setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 1000*60*5);
+			// Show time
+			var time = new Date();
+			var time_hour = time.getHours();
+			var time_minutes = time.getMinutes() + 5;
+			var time_suffix;
+			
+			if(time_minutes >= 60) {
+				time_minutes = time_minutes - 60;
+				time_hour++;
+			}
+			if(time_hour < 12) time_suffix = 'AM';
+			 else time_suffix = 'PM';
+			if(time_hour == 0) time_hour = 12;
+			 else if(time_hour > 12) time_hour = time_hour - 12;
+			 
+			updateStatus('Refreshing at ' + time_hour + ':' + time_minutes + time_suffix + ' ' + time.getSeconds() + 'seconds');
+		}
+	} else {
+		header = document.getElementById("app377144924760_header");
+		checkActions();
+	}
+}
+
 // Runs every second to check for turn readyness
 function checkActions() {
 	// Terminate this loop if there is a battle in progress. Battle Loop will take over.
-	if(battleInProgress) return;
+	if(battleInProgress > 0) return;
 	
 	// Check if there is energy. Will terminate everything if there is no energy.
 	if(document.getElementById('app377144924760_hud_energy_quantity').innerHTML == 0) {
@@ -191,7 +223,6 @@ function checkActions() {
 
 // Runs every second to check for battle status
 function loopWhileBattle() {
-	updateStatus("Battle ongoing...");
 	var winnerDiv = getElementsByClassName("winner player", "div", document.getElementById('app377144924760_turnSummary'));
 	var roundOver = getElementsByClassName("hidden player", "div", document.getElementById('app377144924760_turnStack'));
 	
@@ -205,13 +236,20 @@ function loopWhileBattle() {
 	if(roundOver.length == 1 && roundOver[0].getAttribute("id") == "app377144924760_turnSummary") {
 		// Run this every second until the battle is over.
 		setTimeout(loopWhileBattle, 1000);
+		if(battleInProgress == 1) {
+			var enemy = getElementsByClassName("encounterText", "div");
+			if(enemy.length == 1) {
+				updateStatus("VS: <enemy name>");
+			}
+			battleInProgress = 2;
+		}
 	} else {
-		battleInProgress = false;
-		var loot = getElementsByClassName("lootContent clear-block", "div", document.getElementById('app377144924760_turnSummary'));
-		if(loot.length == 0) {
+		battleInProgress = 0;
+		//var loot = getElementsByClassName("lootContent clear-block", "div", document.getElementById('app377144924760_turnSummary'));
+		//if(loot.length == 0) {
 			updateStatus(won);
 			setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 3000);
-		} else {
+		/*} else {
 			var lootBoxes = getElementsByClassName("mysteryLoot closed", "div", loot[0]);
 			updateStatus(won + " (" + lootBoxes.length + " Loot Present)");
 			
@@ -222,14 +260,14 @@ function loopWhileBattle() {
 			//alert('!LOOT PRESENT!');
 			setTimeout('lootOpened('+lootBoxes.length+');', 1000);
 			// Refresh page in 5 seconds after opening loot. 
-			// Should be neough for AJAX to do its thing.
+			// Should be enough for AJAX to do its thing.
 			setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 5000);
-		}
+		}*/
 		// Refresh page
 		//setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 3000);
 	}
 }
-
+/*
 function lootOpened(total) {
 	var openedLootBoxes = getElementsByClassName("mysteryLoot open", "div", document.getElementById('app377144924760_turnSummary'));
 	if(openedLootBoxes.length == total) {
@@ -238,7 +276,7 @@ function lootOpened(total) {
 		setTimeout('lootOpened('+total+');', 1000);
 	}
 }
-
+*/
 //////////////////////////////
 ////// HELPER FUNCTIONS //////
 //////////////////////////////
@@ -247,7 +285,7 @@ function lootOpened(total) {
 function updateStatus(text) {
 	// For title, strip tags of text.
 	document.title = text.replace(/(<([^>]+)>)/ig,"") + " | " + pageTitle;
-	header.innerHTML = '<div id="app377144924760_status" style="width: 175px;"><span style="background: #ffffff; border: 1px solid; padding: 1px; color: #999999; left: 571px; position: absolute; top: -1px; width: 161px; text-align: center;"><b>[<a href="http://userscripts.org/scripts/show/80811" target="_blank" style="color: #666666; text-decoration: none;">AutoPlayer</a> v' + _LLAPversion + ']</b><br />' + text + '</span></div>' + headerHTML;
+	if(header) header.innerHTML = '<div id="app377144924760_status" style="width: 175px;"><span style="background: #ffffff; border: 1px solid; padding: 1px; color: #999999; left: 571px; position: absolute; top: -1px; width: 161px; text-align: center;"><b>[<a href="http://userscripts.org/scripts/show/80811" target="_blank" style="color: #666666; text-decoration: none;">AutoPlayer</a> v' + _LLAPversion + ']</b><br />' + text + '</span></div>' + headerHTML;
 }
 
 // Virtually click an element
