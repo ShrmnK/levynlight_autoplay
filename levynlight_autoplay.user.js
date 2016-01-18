@@ -3,11 +3,19 @@
 // @namespace      http://www.shrmn.com/
 // @description    Automatically plays LevynLight turn, shows time to next turn in title bar and sub-menu bar.
 // @copyright      2010, Shrmn K (http://www.shrmn.com/)
-// @version        0.1.9
+// @version        0.2.0
 // @include        http://apps.facebook.com/levynlight/*
 // @include        http://apps.new.facebook.com/levynlight/*
 // @require        http://userscripts.org/scripts/source/74144.user.js
 //
+// @history 0.2.0 Added display of refreshing time of Stagnant Wait in body of page
+// @history 0.2.0 Fixed bug where checking for page load would return an error if the playCounter element was not present
+// @history 0.2.0 Fixed bug where the minutes in Stagnant Wait would display as a single digit if it was < 10
+// @history 0.2.0 Changed timeleft display to have 3 types: '830s', '14m 30s', or 14:30
+// @history 0.2.0 Changed Victory and Defeat text (displays enemy name)
+// @history 0.2.0 Changed all instances of 'AutoPlayer' to 'AutoPlay' to be consistent in naming
+// @history 0.2.0 Removed exclamation mark in enemy name
+// @history 0.2.0 Compatible with LevynLight v2.0.21
 // @history 0.1.9 Added name of enemy in Status update during battles
 // @history 0.1.9 Changed minutes/seconds display to show 'm' and 's' as per TheDr's request
 // @history 0.1.9 Changed default behavior of timeleft display to show in minutes and seconds
@@ -57,7 +65,7 @@
 
 // Settings - will get overwritten by GreaseMonkey functions
 var updateFrequency = 1;         // Frequency timer updates (in seconds)
-var showSeconds = false;         // Timer shows in seconds instead of m and s
+var timeDisplayType = 1;         // Type of timeleft display
 var alertOnEnergyZero = true;    // Fires a javascript alert box to inform user that he has no more energy
 var stagnantThreshold = 10;      // Waits this number of seconds for page to load
 
@@ -78,7 +86,7 @@ var i = 0;
 var enemyName = '';
 
 // Constants
-var _LLAPversion = '0.1.9';
+var _LLAPversion = '0.2.0';
 
 ////////////////////////////
 ////// CORE FUNCTIONS //////
@@ -95,13 +103,13 @@ function initialize() {
 	} catch(e) { };
 	
 	// Restore settings from Greasemonkey
-	showSeconds = GM_getValue('showSeconds', false);
+	timeDisplayType = GM_getValue('timeDisplayType', 1);
 	alertOnEnergyZero = GM_getValue('alertOnEnergyZero', true);
 	updateFrequency = GM_getValue('updateFrequency', 1);
 	stagnantThreshold = GM_getValue('stagnantThreshold', 10);
 	
 	// Greasemonkey User Commands
-	GM_registerMenuCommand("[LevynLight AutoPlayer] Check for Updates", function() {
+	GM_registerMenuCommand("[LevynLight AutoPlay] Check for Updates", function() {
 		try {
 			ScriptUpdater.forceCheck(80811, _LLAPversion, function(v) {
 				if(v > _LLAPversion) {
@@ -109,9 +117,9 @@ function initialize() {
 						ScriptUpdater.forceNotice(80811, _LLAPversion);
 					} catch(e) {};
 				} else if(v < _LLAPversion) {
-					alert('[LevynLight AutoPlayer]\nYou have a later version [dev] than what is on UserScripts.org!\nYour Version/UserScripts Version: ' + _LLAPversion + '/' + v);
+					alert('[LevynLight AutoPlay]\nYou have a later version [dev] than what is on UserScripts.org!\nYour Version/UserScripts Version: ' + _LLAPversion + '/' + v);
 				} else if(v == _LLAPversion) {
-					if(confirm('[LevynLight AutoPlayer]\nYou already have the latest version!\nYour Version/UserScripts Version: ' + _LLAPversion + '/' + v + '\n\nClick OK to reinstall LevynLight AutoPlayer v' + v + ',\b else, click Cancel.')) {
+					if(confirm('[LevynLight AutoPlay]\nYou already have the latest version!\nYour Version/UserScripts Version: ' + _LLAPversion + '/' + v + '\n\nClick OK to reinstall LevynLight AutoPlay v' + v + ',\b else, click Cancel.')) {
 						try {
 							ScriptUpdater.forceNotice(80811, _LLAPversion);
 						} catch(e) {};
@@ -121,35 +129,40 @@ function initialize() {
 		} catch(e) {};
 	});
 	
-	GM_registerMenuCommand("[LevynLight AutoPlayer] Toggle Seconds/Minutes", function() {
-		if(showSeconds) {
-			showSeconds=false;
-			GM_setValue('showSeconds', false);
-		} else {
-			showSeconds=true;
-			GM_setValue('showSeconds', true);
+	GM_registerMenuCommand("[LevynLight AutoPlay] Change Timeleft Display", function() {
+		var tmp = prompt('[LevynLight AutoPlay]\nChange the Timeleft Display.\n0 = "830s"\n1 = "14m 30s"\n2 = "14:30"', timeDisplayType);
+		if(tmp === null) return;
+		tmp = parseInt(tmp, 10);
+		// Keep asking until they give a frikin number
+		while(isNaN(tmp) || tmp < 0 || tmp > 2) {
+			tmp = prompt('[LevynLight AutoPlay]\nChange the Timeleft Display.\n0 = "830s"\n1 = "14m 30s"\n2 = "14:30"', timeDisplayType);
+			if(tmp === null) return;
+			tmp = parseInt(tmp, 10);
 		}
+		// Set the value, through parseInt, base 10 (decimal)
+		timeDisplayType = tmp;
+		GM_setValue('timeDisplayType', timeDisplayType);
 	});
 	
-	GM_registerMenuCommand("[LevynLight AutoPlayer] Toggle No Energy Alert", function() {
+	GM_registerMenuCommand("[LevynLight AutoPlay] Toggle No Energy Alert", function() {
 		if(alertOnEnergyZero) {
 			alertOnEnergyZero=false;
 			GM_setValue('alertOnEnergyZero', false);
-			alert('[LevynLight AutoPlayer] You will NOT be alerted when you have no energy');
+			alert('[LevynLight AutoPlay] You will NOT be alerted when you have no energy');
 		} else {
 			alertOnEnergyZero=true;
 			GM_setValue('alertOnEnergyZero', true);
-			alert('[LevynLight AutoPlayer] You WILL be alerted when you have no energy');
+			alert('[LevynLight AutoPlay] You WILL be alerted when you have no energy');
 		}
 	});
 	
-	GM_registerMenuCommand("[LevynLight AutoPlayer] Change Update Frequency", function() {
-		var tmp = prompt('[LevynLight AutoPlayer]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency);
+	GM_registerMenuCommand("[LevynLight AutoPlay] Change Update Frequency", function() {
+		var tmp = prompt('[LevynLight AutoPlay]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency);
 		if(tmp === null) return;
 		tmp = parseInt(tmp, 10);
 		// Keep asking until they give a frikin number
 		while(isNaN(tmp) || tmp < 1 || tmp > 900) {
-			tmp = prompt('[LevynLight AutoPlayer]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency);
+			tmp = prompt('[LevynLight AutoPlay]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency);
 			if(tmp === null) return;
 			tmp = parseInt(tmp, 10);
 		}
@@ -158,13 +171,13 @@ function initialize() {
 		GM_setValue('updateFrequency', updateFrequency);
 	});
 	
-	GM_registerMenuCommand("[LevynLight AutoPlayer] Change Stagnant Wait Threshold", function() {
-		var tmp = prompt('[LevynLight AutoPlayer]\nStagnant Wait is the time the script waits for the page to load (incl. AJAX functions) before deeming the page dormant and refreshing the page.\n\nThe current Threshold is ('+stagnantThreshold+'s). \nPlease enter the new Threshold (in seconds, min 5, max 30).', stagnantThreshold);
+	GM_registerMenuCommand("[LevynLight AutoPlay] Change Stagnant Wait Threshold", function() {
+		var tmp = prompt('[LevynLight AutoPlay]\nStagnant Wait is the time the script waits for the page to load (incl. AJAX functions) before deeming the page dormant and refreshing the page.\n\nThe current Threshold is ('+stagnantThreshold+'s). \nPlease enter the new Threshold (in seconds, min 5, max 30).', stagnantThreshold);
 		if(tmp === null) return;
 		tmp = parseInt(tmp, 10);
 		// Keep asking until they give a frikin number
 		while(isNaN(tmp) || tmp < 5 || tmp > 30) {
-			tmp = prompt('[LevynLight AutoPlayer]\nStagnant Wait is the time the script waits for the page to load (incl. AJAX functions) before deeming the page dormant and refreshing the page.\n\nThe current Threshold is ('+stagnantThreshold+'s). \nPlease enter the new Threshold (in seconds, min 5, max 30).', stagnantThreshold);
+			tmp = prompt('[LevynLight AutoPlay]\nStagnant Wait is the time the script waits for the page to load (incl. AJAX functions) before deeming the page dormant and refreshing the page.\n\nThe current Threshold is ('+stagnantThreshold+'s). \nPlease enter the new Threshold (in seconds, min 5, max 30).', stagnantThreshold);
 			if(tmp === null) return;
 			tmp = parseInt(tmp, 10);
 		}
@@ -197,7 +210,7 @@ function playTurn() {
 
 // Loops to check if the page is loaded
 function checkPage() {
-	if(document.getElementById('app377144924760_playCounter').innerHTML == '') {
+	if(document.getElementById('app377144924760_playCounter') == null) {
 		if(stagnantTime < stagnantThreshold) {
 			setTimeout(checkPage, 1000);
 			stagnantTime++;
@@ -214,12 +227,15 @@ function checkPage() {
 				time_minutes = time_minutes - 60;
 				time_hour++;
 			}
+			if(time_minutes < 10) time_minutes = '0' + time_minutes;	// Fix missing '0' if minutes is single-digit
 			if(time_hour < 12) time_suffix = 'AM';
 			 else time_suffix = 'PM';
 			if(time_hour == 0) time_hour = 12;
 			 else if(time_hour > 12) time_hour = time_hour - 12;
 			 
 			updateStatus('Refreshing at ' + time_hour + ':' + time_minutes + time_suffix + ' ' + time.getSeconds() + 'seconds');
+			
+			document.getElementById('app_content_377144924760').innerHTML = '<div align="center"><h1>[LevynLight AutoPlay]</h1>' + '<h3>Refreshing at ' + time_hour + ':' + time_minutes + time_suffix + ' ' + time.getSeconds() + 'seconds</h3>' + '</div>' + document.getElementById('app_content_377144924760').innerHTML;
 		}
 	} else {
 		header = document.getElementById("app377144924760_header");
@@ -254,10 +270,12 @@ function checkActions() {
 		var splitTime = timeLeft.split(':');
 		// Check every updateFrequency seconds
 		setTimeout(checkActions, updateFrequency*1000);
-		if(showSeconds)
+		if(timeDisplayType == 0)
 			updateStatus('Next Turn in <b>' + parseInt(parseInt(splitTime[0])*60 + parseInt(splitTime[1])) + 's</b>');
-		else
+		else if (timeDisplayType == 1)
 			updateStatus('Next Turn in <b>' + timeLeft.replace(':', 'm ') + 's</b>');
+		else
+			updateStatus('Next Turn in <b>' + timeLeft + '</b>');
 	}
 }
 
@@ -284,9 +302,9 @@ function loopWhileBattle() {
 	var winnerDiv = getElementsByClassName("winner player", "div", document.getElementById('app377144924760_turnSummary'));
 	var roundOver = getElementsByClassName("hidden player", "div", document.getElementById('app377144924760_turnStack'));
 	
-	var won = "Victory!";
+	var won = 'Victory against ' + enemyName + '!';
 	if(winnerDiv.length == 0) {
-		won = "Defeat!";
+		won = 'Defeated by ' + enemyName + '!';
 		// The class changes from "player" to "game" when the AI wins
 		roundOver = getElementsByClassName("hidden game", "div", document.getElementById('app377144924760_turnStack'));
 	}
@@ -336,7 +354,7 @@ function getEnemyName() {
 	var enemy = getElementsByClassName("encounterText", "div", document.getElementById('app377144924760_turnLog'));
 	if(enemy.length == 1) {
 		var tmp = enemy[0].innerHTML;
-		enemyName = tmp.substr(tmp.indexOf('<b>') + 3, tmp.indexOf('</b>') - 3);
+		enemyName = tmp.substr(tmp.indexOf('<b>') + 3, tmp.indexOf('</b>') - tmp.indexOf('<b>') - 4);
 		return true;
 	}
 	return false;
