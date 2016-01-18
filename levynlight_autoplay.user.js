@@ -3,11 +3,17 @@
 // @namespace      http://www.shrmn.com/
 // @description    Automatically plays LevynLight turn, shows time to next turn in title bar and sub-menu bar.
 // @copyright      2010, Shrmn K (http://www.shrmn.com/)
-// @version        0.1.8
+// @version        0.1.9
 // @include        http://apps.facebook.com/levynlight/*
 // @include        http://apps.new.facebook.com/levynlight/*
 // @require        http://userscripts.org/scripts/source/74144.user.js
 //
+// @history 0.1.9 Added name of enemy in Status update during battles
+// @history 0.1.9 Changed minutes/seconds display to show 'm' and 's' as per TheDr's request
+// @history 0.1.9 Changed default behavior of timeleft display to show in minutes and seconds
+// @history 0.1.9 Fixed bug where page would just show Defeat if the timer starts before the AJAX has responded
+// @history 0.1.9 Fixed bug where Cancel button in settings doesn't work (Thanks TheDr)
+// @history 0.1.9 Code optimizations
 // @history 0.1.8 Fixed some ugh careless bugs in 0.1.7
 // @history 0.1.8 Commented out untested features
 // @history 0.1.7 Removed loot code as it was a scam (Thanks TheDr)
@@ -49,9 +55,9 @@
 // @history	0.1.0 Initial release
 // ==/UserScript==
 
-// Settings
+// Settings - will get overwritten by GreaseMonkey functions
 var updateFrequency = 1;         // Frequency timer updates (in seconds)
-var showSeconds = true;          // Timer shows in seconds instead of minutes:seconds
+var showSeconds = false;         // Timer shows in seconds instead of m and s
 var alertOnEnergyZero = true;    // Fires a javascript alert box to inform user that he has no more energy
 var stagnantThreshold = 10;      // Waits this number of seconds for page to load
 
@@ -59,14 +65,20 @@ var stagnantThreshold = 10;      // Waits this number of seconds for page to loa
 // *** DO NOT TOUCH ANYTHING BELOW HERE IF YOU DO NOT KNOW WHAT YOU ARE DOING!!! *** //
 ///////////////////////////////////////////////////////////////////////////////////////
 
+// Variable w/ Initial Values
 var pageTitle = document.title;
-var header = false;
-var headerHTML = false;
 var battleInProgress = 0;
 var scriptStarted = false;
-var i = 0;
-var _LLAPversion = '0.1.8';
 var stagnantTime = 0;
+
+// Variable Placeholders
+var header = false;
+var headerHTML = false;
+var i = 0;
+var enemyName = '';
+
+// Constants
+var _LLAPversion = '0.1.9';
 
 ////////////////////////////
 ////// CORE FUNCTIONS //////
@@ -83,9 +95,10 @@ function initialize() {
 	} catch(e) { };
 	
 	// Restore settings from Greasemonkey
-	showSeconds = GM_getValue('showSeconds', true);
+	showSeconds = GM_getValue('showSeconds', false);
 	alertOnEnergyZero = GM_getValue('alertOnEnergyZero', true);
 	updateFrequency = GM_getValue('updateFrequency', 1);
+	stagnantThreshold = GM_getValue('stagnantThreshold', 10);
 	
 	// Greasemonkey User Commands
 	GM_registerMenuCommand("[LevynLight AutoPlayer] Check for Updates", function() {
@@ -107,6 +120,7 @@ function initialize() {
 			});
 		} catch(e) {};
 	});
+	
 	GM_registerMenuCommand("[LevynLight AutoPlayer] Toggle Seconds/Minutes", function() {
 		if(showSeconds) {
 			showSeconds=false;
@@ -116,6 +130,7 @@ function initialize() {
 			GM_setValue('showSeconds', true);
 		}
 	});
+	
 	GM_registerMenuCommand("[LevynLight AutoPlayer] Toggle No Energy Alert", function() {
 		if(alertOnEnergyZero) {
 			alertOnEnergyZero=false;
@@ -127,15 +142,35 @@ function initialize() {
 			alert('[LevynLight AutoPlayer] You WILL be alerted when you have no energy');
 		}
 	});
+	
 	GM_registerMenuCommand("[LevynLight AutoPlayer] Change Update Frequency", function() {
-		var tmp = parseInt(prompt('[LevynLight AutoPlayer]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency), 10);
+		var tmp = prompt('[LevynLight AutoPlayer]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency);
+		if(tmp === null) return;
+		tmp = parseInt(tmp, 10);
 		// Keep asking until they give a frikin number
 		while(isNaN(tmp) || tmp < 1 || tmp > 900) {
-			tmp = parseInt(prompt('[LevynLight AutoPlayer]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency), 10);
+			tmp = prompt('[LevynLight AutoPlayer]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency);
+			if(tmp === null) return;
+			tmp = parseInt(tmp, 10);
 		}
 		// Set the value, through parseInt, base 10 (decimal)
 		updateFrequency = tmp;
 		GM_setValue('updateFrequency', updateFrequency);
+	});
+	
+	GM_registerMenuCommand("[LevynLight AutoPlayer] Change Stagnant Wait Threshold", function() {
+		var tmp = prompt('[LevynLight AutoPlayer]\nStagnant Wait is the time the script waits for the page to load (incl. AJAX functions) before deeming the page dormant and refreshing the page.\n\nThe current Threshold is ('+stagnantThreshold+'s). \nPlease enter the new Threshold (in seconds, min 5, max 30).', stagnantThreshold);
+		if(tmp === null) return;
+		tmp = parseInt(tmp, 10);
+		// Keep asking until they give a frikin number
+		while(isNaN(tmp) || tmp < 5 || tmp > 30) {
+			tmp = prompt('[LevynLight AutoPlayer]\nStagnant Wait is the time the script waits for the page to load (incl. AJAX functions) before deeming the page dormant and refreshing the page.\n\nThe current Threshold is ('+stagnantThreshold+'s). \nPlease enter the new Threshold (in seconds, min 5, max 30).', stagnantThreshold);
+			if(tmp === null) return;
+			tmp = parseInt(tmp, 10);
+		}
+		// Set the value, through parseInt, base 10 (decimal)
+		stagnantThreshold = tmp;
+		GM_setValue('stagnantThreshold', stagnantThreshold);
 	});
 	
 	scriptStarted = true;
@@ -150,7 +185,8 @@ function playTurn() {
 		var playbutton = document.getElementById('app377144924760_playbutton');	
 		clickElement(playbutton);
 		battleInProgress = 1;
-		// Run loop to check for battle status after 3 seconds (enough for AJAX to initiate)
+		// Start loop to check for battle status after 3 seconds
+		// There is a loop within this to check if AJAX has loaded
 		setTimeout(loopWhileBattle, 3000);
 	}
 }
@@ -188,6 +224,7 @@ function checkPage() {
 	} else {
 		header = document.getElementById("app377144924760_header");
 		headerHTML = header.innerHTML;
+		stagnantTime = 0;	// Reset stagnant time to use for turn waiting again
 		checkActions();
 	}
 }
@@ -220,12 +257,30 @@ function checkActions() {
 		if(showSeconds)
 			updateStatus('Next Turn in <b>' + parseInt(parseInt(splitTime[0])*60 + parseInt(splitTime[1])) + 's</b>');
 		else
-			updateStatus('Next Turn in <b>' + timeLeft + '</b>');
+			updateStatus('Next Turn in <b>' + timeLeft.replace(':', 'm ') + 's</b>');
 	}
 }
 
 // Runs every second to check for battle status
 function loopWhileBattle() {
+	if(battleInProgress == 1) {
+		if(!getEnemyName()) {
+			if(stagnantTime < stagnantThreshold) {
+				// AJAX has not responded; run loop again in a second
+				stagnantTime++;
+				updateStatus('Loading... (' + (stagnantThreshold-stagnantTime+1) + 's before page refresh)');
+				setTimeout(loopWhileBattle, 1000);
+				return;
+			} else {
+				updateStatus('Refreshing Page...');
+				window.location = "http://apps.facebook.com/levynlight/";
+				return;
+			}
+		} else {
+			updateStatus("VS: " + enemyName);
+			battleInProgress = 2;
+		}
+	}
 	var winnerDiv = getElementsByClassName("winner player", "div", document.getElementById('app377144924760_turnSummary'));
 	var roundOver = getElementsByClassName("hidden player", "div", document.getElementById('app377144924760_turnStack'));
 	
@@ -239,13 +294,6 @@ function loopWhileBattle() {
 	if(roundOver.length == 1 && roundOver[0].getAttribute("id") == "app377144924760_turnSummary") {
 		// Run this every second until the battle is over.
 		setTimeout(loopWhileBattle, 1000);
-		if(battleInProgress == 1) {
-			//var enemy = getElementsByClassName("encounterText", "div");
-			//if(enemy.length == 1) {
-				updateStatus("Battle ongoing...");
-			//}
-			battleInProgress = 2;
-		}
 	} else {
 		battleInProgress = 0;
 		//var loot = getElementsByClassName("lootContent clear-block", "div", document.getElementById('app377144924760_turnSummary'));
@@ -283,6 +331,16 @@ function lootOpened(total) {
 //////////////////////////////
 ////// HELPER FUNCTIONS //////
 //////////////////////////////
+
+function getEnemyName() {
+	var enemy = getElementsByClassName("encounterText", "div", document.getElementById('app377144924760_turnLog'));
+	if(enemy.length == 1) {
+		var tmp = enemy[0].innerHTML;
+		enemyName = tmp.substr(tmp.indexOf('<b>') + 3, tmp.indexOf('</b>') - 3);
+		return true;
+	}
+	return false;
+}
 
 // Changes text in title as well as info box
 function updateStatus(text) {
