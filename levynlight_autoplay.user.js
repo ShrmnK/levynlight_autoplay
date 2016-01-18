@@ -3,7 +3,7 @@
 // @namespace      http://www.shrmn.com/
 // @description    Automatically plays LevynLight turn, shows time to next turn in title bar and sub-menu bar.
 // @copyright      2010, Shrmn K (http://www.shrmn.com/)
-// @version        0.1.4
+// @version        0.1.5
 // @include        http://apps.facebook.com/levynlight/*
 // @include        http://apps.new.facebook.com/levynlight/*
 // ==/UserScript==
@@ -16,16 +16,16 @@ var alertOnEnergyZero = true;    // Fires a javascript alert box to inform user 
 
 // *** DO NOT TOUCH ANYTHING BELOW HERE IF YOU DO NOT KNOW WHAT YOU ARE DOING!!! *** //
 var pageTitle = document.title;
-var subMenu = document.getElementById("app377144924760_subMenu");
-var subMenuHTML = subMenu.innerHTML;
+var header = document.getElementById("app377144924760_header");
+var headerHTML = header.innerHTML;
 var battleInProgress = false;
 var scriptStarted = false;
-var _LLAPversion = '0.1.4';
+var _LLAPversion = '0.1.5';
 
 function updateStatus(text) {
 	// For title, strip tags of text.
 	document.title = text.replace(/(<([^>]+)>)/ig,"") + " | " + pageTitle;
-	subMenu.innerHTML = '<span style="border: 1px solid; padding: 1px 1px 1px 1px; color: #999999; left: 215px; position: absolute; top: 13px;">&nbsp;<b>[<a href="http://userscripts.org/scripts/show/80811" target="_blank" style="color: #666666; text-decoration: none;">AutoPlay</a> v' + _LLAPversion + ']</b> ' + text + '&nbsp;</span>&nbsp;' + subMenuHTML;
+	header.innerHTML = '<div id="app377144924760_status" style="width: 175px;"><span style="background: #ffffff; border: 1px solid; padding: 1px; color: #999999; left: 571px; position: absolute; top: -1px; width: 161px; text-align: center;"><b>[<a href="http://userscripts.org/scripts/show/80811" target="_blank" style="color: #666666; text-decoration: none;">AutoPlayer</a> v' + _LLAPversion + ']</b><br />' + text + '</span></div>' + headerHTML;
 }
 
 function checkActions() {
