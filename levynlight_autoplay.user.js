@@ -3,16 +3,22 @@
 // @namespace      http://www.shrmn.com/
 // @description    Automatically plays LevynLight turn, shows time to next turn in title bar and sub-menu bar.
 // @copyright      2010, Shrmn K (http://www.shrmn.com/)
-// @version        0.1.2
+// @version        0.1.3
 // @include        http://apps.facebook.com/levynlight/*
 // @include        http://apps.new.facebook.com/levynlight/*
-// @require        http://getelementsbyclassname.googlecode.com/files/getElementsByClassName-1.0.1.js
 // ==/UserScript==
 
+// Settings
+var updateFrequency = 5;	// Frequency timer updates (in seconds)
+
+
+// *** DO NOT TOUCH ANYTHING BELOW HERE IF YOU DO NOT KNOW WHAT YOU ARE DOING!!! *** //
 var pageTitle = document.title;
 var subMenu = document.getElementById("app377144924760_subMenu");
 var subMenuHTML = subMenu.innerHTML;
 var battleInProgress = false;
+var scriptStarted = false;
+var _LLAPversion = '0.1.3';
 
 function updateStatus(text) {
 	// For title, strip tags of text.
@@ -21,6 +27,7 @@ function updateStatus(text) {
 }
 
 function checkActions() {
+	scriptStarted = true;
 	// Check if there is energy. Will terminate everything if there is no energy.
 	if(document.getElementById('app377144924760_hud_energy_quantity').innerHTML == 0) {
 		updateStatus('Out of Energy!');
@@ -44,7 +51,7 @@ function checkActions() {
 		var secondsToPlay = parseInt(splitTime[0])*60 + parseInt(splitTime[1]);
 		if(splitTime.length == 2 && typeof(secondsToPlay) == 'number') {
 			// Check every 5 seconds
-			setTimeout(checkActions, 5000);
+			setTimeout(checkActions, updateFrequency*1000);
 			//alert("TIMEOUT SET: " + timeleft + " (" + splitTime[0] + "/" + splitTime[1] + ") -- " + secondsToPlay + "s");
 			updateStatus('Next Turn in: <b>' + secondsToPlay + 's</b>');
 		} else {
@@ -93,10 +100,99 @@ function loopWhileBattle() {
 		else
 			updateStatus(won + " (Loot Present)");
 		// Refresh page
-		window.location = "http://apps.facebook.com/levynlight/";
+		setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 3000);
 	}
 }
 
-if (document.addEventListener)
+/*
+	Following function getElementsByClassName is
+	Developed by Robert Nyman, http://www.robertnyman.com
+	Code/licensing: http://code.google.com/p/getelementsbyclassname/
+*/	
+var getElementsByClassName = function (className, tag, elm){
+	if (document.getElementsByClassName) {
+		getElementsByClassName = function (className, tag, elm) {
+			elm = elm || document;
+			var elements = elm.getElementsByClassName(className),
+				nodeName = (tag)? new RegExp("\\b" + tag + "\\b", "i") : null,
+				returnElements = [],
+				current;
+			for(var i=0, il=elements.length; i<il; i+=1){
+				current = elements[i];
+				if(!nodeName || nodeName.test(current.nodeName)) {
+					returnElements.push(current);
+				}
+			}
+			return returnElements;
+		};
+	}
+	else if (document.evaluate) {
+		getElementsByClassName = function (className, tag, elm) {
+			tag = tag || "*";
+			elm = elm || document;
+			var classes = className.split(" "),
+				classesToCheck = "",
+				xhtmlNamespace = "http://www.w3.org/1999/xhtml",
+				namespaceResolver = (document.documentElement.namespaceURI === xhtmlNamespace)? xhtmlNamespace : null,
+				returnElements = [],
+				elements,
+				node;
+			for(var j=0, jl=classes.length; j<jl; j+=1){
+				classesToCheck += "[contains(concat(' ', @class, ' '), ' " + classes[j] + " ')]";
+			}
+			try	{
+				elements = document.evaluate(".//" + tag + classesToCheck, elm, namespaceResolver, 0, null);
+			}
+			catch (e) {
+				elements = document.evaluate(".//" + tag + classesToCheck, elm, null, 0, null);
+			}
+			while ((node = elements.iterateNext())) {
+				returnElements.push(node);
+			}
+			return returnElements;
+		};
+	}
+	else {
+		getElementsByClassName = function (className, tag, elm) {
+			tag = tag || "*";
+			elm = elm || document;
+			var classes = className.split(" "),
+				classesToCheck = [],
+				elements = (tag === "*" && elm.all)? elm.all : elm.getElementsByTagName(tag),
+				current,
+				returnElements = [],
+				match;
+			for(var k=0, kl=classes.length; k<kl; k+=1){
+				classesToCheck.push(new RegExp("(^|\\s)" + classes[k] + "(\\s|$)"));
+			}
+			for(var l=0, ll=elements.length; l<ll; l+=1){
+				current = elements[l];
+				match = false;
+				for(var m=0, ml=classesToCheck.length; m<ml; m+=1){
+					match = classesToCheck[m].test(current.className);
+					if (!match) {
+						break;
+					}
+				}
+				if (match) {
+					returnElements.push(current);
+				}
+			}
+			return returnElements;
+		};
+	}
+	return getElementsByClassName(className, tag, elm);
+};
+
+// Firefox DOMContentLoaded (Greasemonkey)
+if(document.addEventListener) {
 	document.addEventListener("DOMContentLoaded", checkActions, false);
-var _LLAPversion = '0.1.2';
+}
+// Chrome window.onload (Script Extension)
+// Possible support for other browsers as well
+window.onload = function() {
+	if(!scriptStarted) {
+		setTimeout('if(!scriptStarted) { checkActions(); }', 3000);
+		checkActions();
+	}
+}
