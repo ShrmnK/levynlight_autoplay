@@ -3,9 +3,46 @@
 // @namespace      http://www.shrmn.com/
 // @description    Automatically plays LevynLight turn, shows time to next turn in title bar and sub-menu bar.
 // @copyright      2010, Shrmn K (http://www.shrmn.com/)
-// @version        0.1.5
+// @version        0.1.6
 // @include        http://apps.facebook.com/levynlight/*
 // @include        http://apps.new.facebook.com/levynlight/*
+// @require        http://userscripts.org/scripts/source/74144.user.js
+//
+// @history 0.1.6 Fixed some compatibility issues with Loot in Maintenance update v2.0.15 (thanks d3stiny)
+// @history 0.1.6 Added menu commands (uses Greasemonkey's memory system. Breaks support for Chrome)
+// @history 0.1.6 Added ability to force update check
+// @history 0.1.6 Added ability to change update frequency
+// @history 0.1.6 Added ability to toggle Minutes or Seconds display
+// @history 0.1.6 Added ability to toggle No Energy alert
+// @history 0.1.6 Added TheSpy's Script Updater - http://userscripts.org/scripts/show/74144
+// @hsitory 0.1.6 Code optimizations
+// @history 0.1.5 Fixed compatibility with Chapter 4 release v2.0.14
+// @history 0.1.5 Moved timerbox down to header section, above Play button
+// @history 0.1.4 Changed default update frequency to 1 second
+// @history 0.1.4 Script option to show minutes instead of seconds
+// @history 0.1.4 Removed colon in timer display
+// @history 0.1.4 Option to launch a javascript alert box if there is no energy remaining (default on)
+// @history 0.1.4 Removed redundant call to start script more than once
+// @history 0.1.4 Added check for whether script has started in window.onload function in case Firefox calls function twice
+// @history 0.1.4 - Code optimizations
+// @history 0.1.3 Chrome support (limited)
+// @history 0.1.3 Code is now self-contained
+// @history 0.1.3 Version variable moved up to fix 'vundefined' bug
+// @history 0.1.3 Added fallback to initialize script without DOMContentLoaded (for Chrome)
+// @history 0.1.3 Added 3 second delay before refreshing page
+// @history 0.1.3 Added configurable script variable for update frequency (see top of script, "Settings" section)
+// @history 0.1.2 Now does not keep attempting to play turn if you have no Energy
+// @history 0.1.2 Now updates both subMenu info text as well as title text
+// @history 0.1.2 Changed "Time to next turn: XXs" to "Next turn in XXs"
+// @history 0.1.2 Added check if battle in progress before running timer functions
+// @history 0.1.2 Added version in info text area
+// @history 0.1.2 Added link to userscripts.org page for this script in info text tag
+// @history 0.1.2 Added random time before playing turn instead of the fixed 3 seconds
+// @history 0.1.2 Added DOMContentLoaded event to start script instead of the 1 second delay after script loads
+// @history 0.1.2 Tested with playing map movement turns
+// @history 0.1.2 Code optimizations
+// @history 0.1.1 Should fix bug where page would not refresh if you lost the battle
+// @history	0.1.0 Initial release
 // ==/UserScript==
 
 // Settings
@@ -13,23 +50,118 @@ var updateFrequency = 1;         // Frequency timer updates (in seconds)
 var showSeconds = true;          // Timer shows in seconds instead of minutes:seconds
 var alertOnEnergyZero = true;    // Fires a javascript alert box to inform user that he has no more energy
 
-
+///////////////////////////////////////////////////////////////////////////////////////
 // *** DO NOT TOUCH ANYTHING BELOW HERE IF YOU DO NOT KNOW WHAT YOU ARE DOING!!! *** //
+///////////////////////////////////////////////////////////////////////////////////////
+
 var pageTitle = document.title;
 var header = document.getElementById("app377144924760_header");
 var headerHTML = header.innerHTML;
 var battleInProgress = false;
 var scriptStarted = false;
-var _LLAPversion = '0.1.5';
+var i = 0;
+var _LLAPversion = '0.1.6';
 
-function updateStatus(text) {
-	// For title, strip tags of text.
-	document.title = text.replace(/(<([^>]+)>)/ig,"") + " | " + pageTitle;
-	header.innerHTML = '<div id="app377144924760_status" style="width: 175px;"><span style="background: #ffffff; border: 1px solid; padding: 1px; color: #999999; left: 571px; position: absolute; top: -1px; width: 161px; text-align: center;"><b>[<a href="http://userscripts.org/scripts/show/80811" target="_blank" style="color: #666666; text-decoration: none;">AutoPlayer</a> v' + _LLAPversion + ']</b><br />' + text + '</span></div>' + headerHTML;
+////////////////////////////
+////// CORE FUNCTIONS //////
+////////////////////////////
+
+// First thing to run
+// Gets script updater to check for updates
+// Register menu commands in Greasemonkey
+function initialize() {
+	if(scriptStarted) return;
+	//ScriptUpdater.check(80811, _LLAPversion);
+	try {
+		ScriptUpdater.check(80811, _LLAPversion);
+	} catch(e) { };
+	
+	// Restore settings from Greasemonkey
+	showSeconds = GM_getValue('showSeconds', true);
+	alertOnEnergyZero = GM_getValue('alertOnEnergyZero', true);
+	updateFrequency = GM_getValue('updateFrequency', 1);
+	
+	// Greasemonkey User Commands
+	GM_registerMenuCommand("[LevynLight AutoPlayer] Check for Updates", function() {
+		try {
+			ScriptUpdater.forceCheck(80811, _LLAPversion, function(v) {
+				if(v > _LLAPversion) {
+					try {
+						ScriptUpdater.forceNotice(80811, _LLAPversion);
+					} catch(e) {};
+				} else if(v < _LLAPversion) {
+					alert('[LevynLight AutoPlayer]\nYou have a later version [dev] than what is on UserScripts.org!\nYour Version/UserScripts Version: ' + _LLAPversion + '/' + v);
+				} else if(v == _LLAPversion) {
+					if(confirm('[LevynLight AutoPlayer]\nYou already have the latest version!\nYour Version/UserScripts Version: ' + _LLAPversion + '/' + v + '\n\nClick OK to reinstall LevynLight AutoPlayer v' + v + ',\b else, click Cancel.')) {
+						try {
+							ScriptUpdater.forceNotice(80811, _LLAPversion);
+						} catch(e) {};
+					}
+				}
+			});
+		} catch(e) {};
+	});
+	GM_registerMenuCommand("[LevynLight AutoPlayer] Toggle Seconds/Minutes", function() {
+		if(showSeconds) {
+			showSeconds=false;
+			GM_setValue('showSeconds', false);
+		} else {
+			showSeconds=true;
+			GM_setValue('showSeconds', true);
+		}
+	});
+	GM_registerMenuCommand("[LevynLight AutoPlayer] Toggle No Energy Alert", function() {
+		if(alertOnEnergyZero) {
+			alertOnEnergyZero=false;
+			GM_setValue('alertOnEnergyZero', false);
+			alert('[LevynLight AutoPlayer] You will NOT be alerted when you have no energy');
+		} else {
+			alertOnEnergyZero=true;
+			GM_setValue('alertOnEnergyZero', true);
+			alert('[LevynLight AutoPlayer] You WILL be alerted when you have no energy');
+		}
+	});
+	GM_registerMenuCommand("[LevynLight AutoPlayer] Change Update Frequency", function() {
+		var tmp = parseInt(prompt('[LevynLight AutoPlayer]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency), 10);
+		// Keep asking until they give a frikin number
+		while(isNaN(tmp) || tmp < 1 || tmp > 900) {
+			tmp = parseInt(prompt('[LevynLight AutoPlayer]\nThe current Update Frequency is ('+updateFrequency+'s). \nPlease enter the new Update Frequency (in seconds, max 900).', updateFrequency), 10);
+		}
+		// Set the value, through parseInt, base 10 (decimal)
+		updateFrequency = tmp;
+		GM_setValue('updateFrequency', updateFrequency);
+	});
+	
+	scriptStarted = true;
+	if(document.getElementById('app377144924760_playCounter').innerHTML == '') {
+		// Delay 1 second before running checkActions to eliminate NaN problem
+		setTimeout(checkActions, 1000);
+	} else {
+		checkActions();
+	}
 }
 
+// Starts playing turn
+// Launches click event and starts battle loop after 3 seconds
+function playTurn() {
+	if(!battleInProgress) {
+		var playbutton = document.getElementById('app377144924760_playbutton');	
+		clickElement(playbutton);
+		battleInProgress = true;
+		// Run loop to check for battle status after 3 seconds (enough for AJAX to initiate)
+		setTimeout(loopWhileBattle, 3000);
+	}
+}
+
+/////////////////////////////
+////// TIMER FUNCTIONS //////
+/////////////////////////////
+
+// Runs every second to check for turn readyness
 function checkActions() {
-	scriptStarted = true;
+	// Terminate this loop if there is a battle in progress. Battle Loop will take over.
+	if(battleInProgress) return;
+	
 	// Check if there is energy. Will terminate everything if there is no energy.
 	if(document.getElementById('app377144924760_hud_energy_quantity').innerHTML == 0) {
 		updateStatus('Out of Energy!');
@@ -37,8 +169,6 @@ function checkActions() {
 			alert('You have run out of Energy to use in LevynLight!');
 		return;
 	}
-	// Terminate this loop if there is a battle in progress. Battle Loop will take over.
-	if(battleInProgress) return;
 	
 	var actions = document.getElementById('app377144924760_hud_actions').innerHTML;
 	if(actions > 0) {
@@ -50,37 +180,16 @@ function checkActions() {
 		var timeLeft = document.getElementById('app377144924760_playCounter').innerHTML;
 		timeLeft = timeLeft.replace('+1 action in: ', '');
 		var splitTime = timeLeft.split(':');
-		//var secondsToPlay = parseInt(splitTime[0])*60 + parseInt(splitTime[1]);
-		if(splitTime.length == 2) {
-			// Check every updateFrequency seconds
-			setTimeout(checkActions, updateFrequency*1000);
-			if(showSeconds)
-				updateStatus('Next Turn in <b>' + parseInt(parseInt(splitTime[0])*60 + parseInt(splitTime[1])) + 's</b>');
-			else
-				updateStatus('Next Turn in <b>' + timeLeft + '</b>');
-		} else {
-			setTimeout(checkActions, 1000);
-			//alert("Page not fully loaded yet, check again in 1 second");
-		}
+		// Check every updateFrequency seconds
+		setTimeout(checkActions, updateFrequency*1000);
+		if(showSeconds)
+			updateStatus('Next Turn in <b>' + parseInt(parseInt(splitTime[0])*60 + parseInt(splitTime[1])) + 's</b>');
+		else
+			updateStatus('Next Turn in <b>' + timeLeft + '</b>');
 	}
 }
 
-function playTurn() {
-	if(!battleInProgress) {
-		var playbutton = document.getElementById('app377144924760_playbutton');	
-		/*var clickMouse = document.createEvent("MouseEvents");
-		clickMouse.initMouseEvent("click", true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
-		playbutton.dispatchEvent(clickMouse);*/
-		var clickUI = document.createEvent("UIEvents");
-		clickUI.initUIEvent("click", true, true, window, 1);
-		playbutton.dispatchEvent(clickUI);
-		
-		battleInProgress = true;
-		// Run loop to check for battle status after 3 seconds (enough for ajax to initiate)
-		setTimeout(loopWhileBattle, 3000);
-	}
-}
-
+// Runs every second to check for battle status
 function loopWhileBattle() {
 	updateStatus("Battle ongoing...");
 	var winnerDiv = getElementsByClassName("winner player", "div", document.getElementById('app377144924760_turnSummary'));
@@ -99,17 +208,60 @@ function loopWhileBattle() {
 	} else {
 		battleInProgress = false;
 		var loot = getElementsByClassName("lootContent clear-block", "div", document.getElementById('app377144924760_turnSummary'));
-		if(loot.length == 0)
+		if(loot.length == 0) {
 			updateStatus(won);
-		else
-			updateStatus(won + " (Loot Present)");
+			setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 3000);
+		} else {
+			var lootBoxes = getElementsByClassName("mysteryLoot closed", "div", loot[0]);
+			updateStatus(won + " (" + lootBoxes.length + " Loot Present)");
+			
+			// Click loot boxes
+			for (i = 0; i < lootBoxes.length; i++) {
+				clickElement(lootBoxes[i]);
+			}
+			//alert('!LOOT PRESENT!');
+			setTimeout('lootOpened('+lootBoxes.length+');', 1000);
+			// Refresh page in 5 seconds after opening loot. 
+			// Should be neough for AJAX to do its thing.
+			setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 5000);
+		}
 		// Refresh page
-		setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 3000);
+		//setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 3000);
 	}
 }
 
+function lootOpened(total) {
+	var openedLootBoxes = getElementsByClassName("mysteryLoot open", "div", document.getElementById('app377144924760_turnSummary'));
+	if(openedLootBoxes.length == total) {
+		setTimeout('window.location = "http://apps.facebook.com/levynlight/";', 3000);
+	} else {
+		setTimeout('lootOpened('+total+');', 1000);
+	}
+}
+
+//////////////////////////////
+////// HELPER FUNCTIONS //////
+//////////////////////////////
+
+// Changes text in title as well as info box
+function updateStatus(text) {
+	// For title, strip tags of text.
+	document.title = text.replace(/(<([^>]+)>)/ig,"") + " | " + pageTitle;
+	header.innerHTML = '<div id="app377144924760_status" style="width: 175px;"><span style="background: #ffffff; border: 1px solid; padding: 1px; color: #999999; left: 571px; position: absolute; top: -1px; width: 161px; text-align: center;"><b>[<a href="http://userscripts.org/scripts/show/80811" target="_blank" style="color: #666666; text-decoration: none;">AutoPlayer</a> v' + _LLAPversion + ']</b><br />' + text + '</span></div>' + headerHTML;
+}
+
+// Virtually click an element
+function clickElement(el) {
+	/*var clickMouse = document.createEvent("MouseEvents");
+	clickMouse.initMouseEvent("click", true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+	playbutton.dispatchEvent(clickMouse);*/
+	var clickUI = document.createEvent("UIEvents");
+	clickUI.initUIEvent("click", true, true, window, 1);
+	el.dispatchEvent(clickUI);
+}
+
 /*
-	Following function getElementsByClassName is
+	Following helper function getElementsByClassName is
 	Developed by Robert Nyman, http://www.robertnyman.com
 	Code/licensing: http://code.google.com/p/getelementsbyclassname/
 */	
@@ -190,12 +342,12 @@ var getElementsByClassName = function (className, tag, elm){
 
 // Firefox DOMContentLoaded (Greasemonkey)
 if(document.addEventListener) {
-	document.addEventListener("DOMContentLoaded", checkActions, false);
+	document.addEventListener("DOMContentLoaded", initialize, false);
 }
 // Chrome window.onload (Script Extension)
 // Possible support for other browsers as well
 window.onload = function() {
 	if(!scriptStarted) {
-		setTimeout('if(!scriptStarted) { checkActions(); }', 3000);
+		setTimeout('if(!scriptStarted) { initialize(); }', 3000);
 	}
 }
