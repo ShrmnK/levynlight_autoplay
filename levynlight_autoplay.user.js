@@ -3,13 +3,15 @@
 // @namespace      http://www.shrmn.com/
 // @description    Automatically plays LevynLight turn, shows time to next turn in title bar and sub-menu bar.
 // @copyright      2010, Shrmn K (http://www.shrmn.com/)
-// @version        0.1.3
+// @version        0.1.4
 // @include        http://apps.facebook.com/levynlight/*
 // @include        http://apps.new.facebook.com/levynlight/*
 // ==/UserScript==
 
 // Settings
-var updateFrequency = 5;	// Frequency timer updates (in seconds)
+var updateFrequency = 1;         // Frequency timer updates (in seconds)
+var showSeconds = true;          // Timer shows in seconds instead of minutes:seconds
+var alertOnEnergyZero = true;    // Fires a javascript alert box to inform user that he has no more energy
 
 
 // *** DO NOT TOUCH ANYTHING BELOW HERE IF YOU DO NOT KNOW WHAT YOU ARE DOING!!! *** //
@@ -18,7 +20,7 @@ var subMenu = document.getElementById("app377144924760_subMenu");
 var subMenuHTML = subMenu.innerHTML;
 var battleInProgress = false;
 var scriptStarted = false;
-var _LLAPversion = '0.1.3';
+var _LLAPversion = '0.1.4';
 
 function updateStatus(text) {
 	// For title, strip tags of text.
@@ -31,10 +33,12 @@ function checkActions() {
 	// Check if there is energy. Will terminate everything if there is no energy.
 	if(document.getElementById('app377144924760_hud_energy_quantity').innerHTML == 0) {
 		updateStatus('Out of Energy!');
+		if(alertOnEnergyZero)
+			alert('You have run out of Energy to use in LevynLight!');
 		return;
 	}
 	// Terminate this loop if there is a battle in progress. Battle Loop will take over.
-	if(battleInProgress)	return;
+	if(battleInProgress) return;
 	
 	var actions = document.getElementById('app377144924760_hud_actions').innerHTML;
 	if(actions > 0) {
@@ -43,17 +47,17 @@ function checkActions() {
 		updateStatus('Playing turn...');
 		//window.getAttention();
 	} else {
-		var timeleft = document.getElementById('app377144924760_playCounter').innerHTML;
-		timeleft = timeleft.replace('+1 action in: ', '');
-		var splitTime = timeleft.split(':');
-		// Calculate time left in seconds, and add random number between 0 to 10
-		//var secondsToPlay = parseInt(splitTime[0])*60 + parseInt(splitTime[1]) + Math.floor(Math.random()*10+1);
-		var secondsToPlay = parseInt(splitTime[0])*60 + parseInt(splitTime[1]);
-		if(splitTime.length == 2 && typeof(secondsToPlay) == 'number') {
-			// Check every 5 seconds
+		var timeLeft = document.getElementById('app377144924760_playCounter').innerHTML;
+		timeLeft = timeLeft.replace('+1 action in: ', '');
+		var splitTime = timeLeft.split(':');
+		//var secondsToPlay = parseInt(splitTime[0])*60 + parseInt(splitTime[1]);
+		if(splitTime.length == 2) {
+			// Check every updateFrequency seconds
 			setTimeout(checkActions, updateFrequency*1000);
-			//alert("TIMEOUT SET: " + timeleft + " (" + splitTime[0] + "/" + splitTime[1] + ") -- " + secondsToPlay + "s");
-			updateStatus('Next Turn in: <b>' + secondsToPlay + 's</b>');
+			if(showSeconds)
+				updateStatus('Next Turn in <b>' + parseInt(parseInt(splitTime[0])*60 + parseInt(splitTime[1])) + 's</b>');
+			else
+				updateStatus('Next Turn in <b>' + timeLeft + '</b>');
 		} else {
 			setTimeout(checkActions, 1000);
 			//alert("Page not fully loaded yet, check again in 1 second");
@@ -193,6 +197,5 @@ if(document.addEventListener) {
 window.onload = function() {
 	if(!scriptStarted) {
 		setTimeout('if(!scriptStarted) { checkActions(); }', 3000);
-		checkActions();
 	}
 }
